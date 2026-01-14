@@ -5,85 +5,61 @@ pipeline {
         nodejs 'node-20'
     }
 
-    environment {
-        APP_NAME   = 'fastfood-app'
-        APP_PORT   = '3000'
-        DEPLOY_DIR = '/var/www/fastfood-app'
-    }
-
     stages {
 
         stage('Checkout') {
             steps {
-                echo '📦 CHECKOUT STAGE'
+                echo '📦 CHECKOUT SOURCE CODE'
                 git branch: 'main',
                     url: 'https://github.com/vy0077539-byte/fastfood-cicd-project.git'
-                echo '✅ Repository cloned successfully'
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                echo '📦 INSTALL DEPENDENCIES'
+                echo '📦 INSTALLING DEPENDENCIES'
                 sh '''
-                    node -v
-                    npm -v
+                    node --version
+                    npm --version
                     npm install
                 '''
-                echo '✅ Dependencies installed'
             }
         }
 
         stage('Run Tests (Optional)') {
             steps {
-                echo '🧪 RUN TESTS'
-                sh '''
-                    if npm run | grep -q "test"; then
-                        echo "Running tests..."
-                        npm test
-                    else
-                        echo "No tests found, skipping..."
-                    fi
-                '''
+                echo '🧪 RUN TESTS (OPTIONAL)'
+                script {
+                    sh '''
+                        if npm run | grep -q "test"; then
+                            echo "Running tests..."
+                            npm test
+                        else
+                            echo "No test script found, skipping tests"
+                        fi
+                    '''
+                }
             }
         }
 
         stage('Deploy Application') {
             steps {
-                echo '🚀 DEPLOY APPLICATION'
+                echo '🚀 DEPLOY BACKEND APPLICATION'
                 sh '''
-                    echo "Creating deployment directory..."
-                    sudo mkdir -p $DEPLOY_DIR
-                    sudo rsync -av --delete ./ $DEPLOY_DIR/
-                    sudo chown -R jenkins:jenkins $DEPLOY_DIR
+                    sudo mkdir -p /var/www/fastfood-app
+                    sudo rm -rf /var/www/fastfood-app/*
+                    sudo cp -r * /var/www/fastfood-app/
+                    sudo chown -R jenkins:jenkins /var/www/fastfood-app
 
-                    cd $DEPLOY_DIR
-
-                    echo "Installing production dependencies..."
+                    cd /var/www/fastfood-app
                     npm install --production
 
-                    echo "Stopping existing PM2 app (if any)..."
-                    pm2 delete $APP_NAME || true
+                    echo "Stopping old PM2 process if exists..."
+                    pm2 delete fastfood-app || true
 
-                    echo "Detecting start file..."
-                    START_FILE=""
-                    for f in server.js index.js app.js; do
-                        if [ -f "$f" ]; then
-                            START_FILE="$f"
-                            break
-                        fi
-                    done
-
-                    if [ -z "$START_FILE" ]; then
-                        echo "❌ ERROR: No entry file found (server.js / index.js / app.js)"
-                        exit 1
-                    fi
-
-                    echo "Starting app using $START_FILE"
-                    pm2 start $START_FILE --name $APP_NAME
+                    echo "Starting backend with PM2..."
+                    pm2 start server.js --name fastfood-app
                     pm2 save
-
-                    echo "PM2 process started"
                 '''
             }
         }
@@ -95,16 +71,18 @@ pipeline {
                     sleep 5
 
                     echo "Checking PM2 status..."
-                    pm2 list | grep -q "$APP_NAME.*online"
+                    pm2 list | grep fastfood-app
 
-                    echo "Checking application endpoint..."
-                    if curl -sf http://localhost:$APP_PORT/health; then
-                        echo "✅ Health check passed"
-                    else
-                        echo "❌ Health check failed"
-                        pm2 logs $APP_NAME --lines 20
+                    echo "Checking application health endpoint..."
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health)
+
+                    if [ "$HTTP_CODE" != "200" ]; then
+                        echo "Health check failed with HTTP $HTTP_CODE"
+                        pm2 logs fastfood-app --lines 20 --nostream
                         exit 1
                     fi
+
+                    echo "Health check passed!"
                 '''
             }
         }
@@ -112,18 +90,17 @@ pipeline {
 
     post {
         success {
-            echo '🎉 PIPELINE SUCCESS'
-            sh 'pm2 list'
+            echo '🎉 PIPELINE SUCCESSFUL'
+            sh '''
+                pm2 list
+            '''
         }
 
         failure {
             echo '❌ PIPELINE FAILED'
-            sh 'pm2 logs fastfood-app --lines 30 || true'
-        }
-
-        always {
-            echo '🧹 CLEANUP COMPLETE'
-            echo "⏱️ Build finished: ${currentBuild.currentResult}"
+            sh '''
+                pm2 logs fastfood-app --lines 30 --nostream || true
+            '''
         }
     }
 }
