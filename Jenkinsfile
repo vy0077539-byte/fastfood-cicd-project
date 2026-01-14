@@ -39,8 +39,6 @@ pipeline {
             }
         }
 
-        /* ================= FIXED DEPLOY STAGE ================= */
-
         stage('Deploy Application') {
             steps {
                 echo '🚀 DEPLOY BACKEND APPLICATION'
@@ -64,12 +62,10 @@ pipeline {
 
                     pm2 save
 
-                    echo "✅ Application deployed successfully"
+                    echo "Application deployed successfully"
                 '''
             }
         }
-
-        /* ================= FIXED HEALTH CHECK ================= */
 
         stage('Health Check') {
             steps {
@@ -79,7 +75,30 @@ pipeline {
                     sleep 10
 
                     curl -f http://localhost:3000/health
-                    echo "✅ Health check passed"
+                    echo "Health check passed"
+                '''
+            }
+        }
+
+        /* ============ CLICKABLE LINKS STAGE ============ */
+
+        stage('Application Links') {
+            steps {
+                sh '''
+                    PUBLIC_IP=$(curl -s ifconfig.me)
+
+                    echo "======================================"
+                    echo "Application URL"
+                    echo "http://$PUBLIC_IP:3000"
+
+                    echo ""
+                    echo "Health Check"
+                    echo "http://$PUBLIC_IP:3000/health"
+
+                    echo ""
+                    echo "API Menu"
+                    echo "http://$PUBLIC_IP:3000/api/menu"
+                    echo "======================================"
                 '''
             }
         }
